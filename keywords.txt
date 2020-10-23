@@ -1,5 +1,2 @@
-NA12878
-chr3
-Illumina HiSeq
-ultrasonication
-Illumina TruSeq
+NA12878, chr3, Illumina HiSeq, ultrasonication, Illumina TruSeq
+NA12878, WXS, Illumina HiSeq
