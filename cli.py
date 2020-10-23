@@ -17,7 +17,7 @@ SQL_dict = {'list_tables': 'SELECT name FROM sqlite_master WHERE type="table";',
             'count_lcp': 'SELECT count(library_construction_protocol) FROM experiment WHERE library_construction_protocol like ? OR library_construction_protocol like ?;',
             'all_acc_lcp': 'SELECT submission_accession FROM experiment WHERE library_construction_protocol like ? OR library_construction_protocol like ?;',
             'all_acc_sm': 'SELECT submission_accession FROM sample WHERE description!=?;',
-            'keyword_match': 'SELECT DISTINCT run_accession FROM sra WHERE library_construction_protocol LIKE ? OR study_abstract LIKE ?',
+            #'keyword_match': 'SELECT DISTINCT run_accession FROM sra WHERE library_construction_protocol LIKE ? OR study_abstract LIKE ?',
             'sra_lcp': 'SELECT library_construction_protocol FROM experiment WHERE submission_accession=?',
             'sra_sm': 'SELECT description FROM sample WHERE submission_accession=?'}
 
@@ -123,23 +123,21 @@ class MetaDB(object):
         print("SRAdb file Metadata:")
         print(metadata)
 
-    def keyword_match(self, keyword_file):
-        """
-        Parse metadata against user defined list of keywords. Stores keywords and associated SRRs in the variables table.
-        :param keyword_file: user defined text file of keywords
-        :return: keywords and their associated SRRs
-        """
-        with open(keyword_file, 'r') as f:
-            sys.stdout.write(
-                "Reading {}.. this may take a while depending on the number of keywords in your file".format(keyword_file))
-            for line in f:
-                for keyword in line.split():
-                    print(keyword)
-                    results = self.cursor.execute(
-                        SQL_dict['keyword_match'], ('% ' + keyword + ' %', '% ' + keyword + ' %')).fetchall()
-                    for r in results:
-                        for tup in r:
-                            print('\t' + tup)
+    # def keyword_match(self, keyword_file):
+    #     """
+    #     Parse metadata against user defined list of keywords. Stores keywords and associated SRRs in the variables table.
+    #     :param keyword_file: user defined text file of keywords
+    #     :return: keywords and their associated SRRs
+    #     """
+    #     with open(keyword_file, 'r') as f:
+    #         sys.stdout.write(
+    #             "Reading {}.. this may take a while depending on the number of keywords in your file".format(keyword_file))
+    #         for line in f:
+    #             for keyword in line.split():
+    #                 print(keyword)
+    #                 results = self.cursor.execute(
+    #                     SQL_dict['keyword_match'], ('% ' + keyword + ' %', '% ' + keyword + ' %')).fetchall()
+
 
     def query(self, sql_query: str = 'oogabooga'):
         """
@@ -232,10 +230,11 @@ class MetaDB(object):
 
         query_string = query_string[:-6]
 
-        #results = self.cursor.execute(query_string).fetchall()
-
-        return query_string
-
+        print('Parsing metadb for terms... this may take a while depending on the number of terms')
+        results = self.cursor.execute(query_string).fetchall()
+        for r in results:
+            for tup in r:
+                print(tup)
 
 if __name__ == "__main__":
     fire.Fire(MetaDB)
