@@ -123,10 +123,14 @@ class MetaDB(object):
         print("SRAdb file Metadata:")
         print(metadata)
 
-    def keyword_match(self, keyword_file):
+    def keyword_match(self, submissions, keyword_file, save: str = 'true'):
         """
-        Parse metadata against user defined list of keywords. Stores keywords and associated SRRs in the variables table.
-        :param keyword_file: user defined text file of keywords
+        Search a given list of submissions for matching keywords. 
+        Stores keywords and associated SRRs in the variables table.
+        :param submissions: user defined file of submissions. Use terms function and output to this file.
+        :param keyword_file: user defined file of keywords
+        :param save: OPTIONAL: by default stores keywords and associated SRRs in database \n
+        in a table called terms. Enter 'ns' if you do not wish to store keywords.
         :return: keywords and their associated SRRs
         """
         with open(keyword_file, 'r') as f:
@@ -139,7 +143,8 @@ class MetaDB(object):
                         SQL_dict['keyword_match'], ('% ' + keyword + ' %', '% ' + keyword + ' %')).fetchall()
                     for r in results:
                         for tup in r:
-                            print('\t' + tup)
+                            print(tup)
+
 
     def query(self, sql_query: str = 'oogabooga'):
         """
@@ -147,7 +152,6 @@ class MetaDB(object):
         :param sql_query: SQL query string
         :return: query results formatted as pandas dataframe
         """
-        #results = self.cursor.execute("""SELECT * FROM genome('dna');""").fetchone()
         results = self.cursor.execute(sql_query).fetchall()
         return results
 
@@ -186,45 +190,50 @@ class MetaDB(object):
 
         return results
 
-    def terms(self, terms, save: str = 'true', output: str = 'srr'):
+    def terms(self, terms, output: str = 'srr', save: str = 'true'):
         """
-        Search for term(s) in the sra database. Run 'cli.py terms -h' for documentation \n
+        Search for submissions in the metadb that contain ALL provided terms. Run 'cli.py terms -h' for documentation \n
         The experiment columns searched are 'title', 'study_name', 'design_description', \n
         'sample_name', 'library_strategy', 'library_construction_protocol', 'platform', \n
         'instrument_model', and 'platform_parameters'. \n
         The study column searched is 'study_abstract'.
         :param terms: term(s) to search for separated by commas. ex: 'NA12878, Illumina platform, \n
-        reagent'. Alternatively, enter the path to a text file of terms to search for.
-        :param save: OPTIONAL: by default stores keywords and associated SRRs in database \n
-        in a table called terms. Enter 'ns' if you do not wish to store keywords.
-        :param output: OPTIONAL: by default SRRs are outputted. Enter 'sra_srr' if \n
-        you want both sra and srr accessions.
+        reagent'. Alternatively, enter the path to a text file of term groups to search for.
+        :param output: OPTIONAL: by default SRRs are outputted. Enter 'srp_srr' if \n
+        you want both srp (study) and srr (run) accessions.
         :return: submission and run accession numbers for submissions containing the terms
         """
-
-        terms_list = []
 
         if os.path.isfile(str(terms)):
             with open(terms, 'r') as f:
                 for line in f:
-                    for keyword in line.split():
-                        terms_list.append(keyword)
-            all_terms = terms_list
+                    terms_list = []
+                    for keyword in line.split(','):
+                        terms_list.append(keyword.rstrip("\n"))
+                    self._terms_helper(terms_list, save, output)
         else:
             try:
-                all_terms = terms.split(',')
+                terms = terms.split(',')
             except:
-                all_terms = terms
+                pass
 
+            self._terms_helper(terms, save, output)
+
+
+    def _terms_helper(self, terms, save: str = 'true', output: str = 'srr'):
+        """
+        Terms helper function. Method name is preceded by underscore to hide from user.
+        """
+        
         columns = ['experiment_title', 'study_name', 'design_description', 'sample_name', 'library_strategy', 'library_construction_protocol',
                    'platform', 'instrument_model', 'platform_parameters', 'study_abstract']
 
         if output == 'srr':
             query_string = 'SELECT DISTINCT run_accession FROM sra WHERE ('
         else:
-            query_string = 'SELECT DISTINCT submission_accession, run_accession FROM sra WHERE ('
+            query_string = 'SELECT DISTINCT study_accession, run_accession FROM sra WHERE ('
 
-        for t in all_terms:
+        for t in terms:
             for c in columns:
                 query_string += c + ' LIKE "%' + t + '%" OR '
             query_string = query_string[:-4]
@@ -232,9 +241,16 @@ class MetaDB(object):
 
         query_string = query_string[:-6]
 
-        #results = self.cursor.execute(query_string).fetchall()
-
-        return query_string
+        results = self.cursor.execute(query_string).fetchall()
+        if not results:
+            print('No submissions match all of the provided terms: {}'.format(terms))
+        else:
+            for r in results:
+                #results is a list of tuples
+                if output == 'srr':
+                    print(r[0])
+                else:
+                    print(r[0] + ', ' + r[1])
 
 
 if __name__ == "__main__":
