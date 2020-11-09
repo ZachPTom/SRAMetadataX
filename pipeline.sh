@@ -12,6 +12,7 @@ module load sratoolkit fastqc bwa samtools vcftools-0.1.13
 
 genome=~/pipeline/hg38/hg38.fa
 
+#Uncomment the line below for your first time running the pipeline only
 #bwa index $genome
 mkdir -p sam bam bcf vcf artifacts artifacts/all
 
@@ -38,6 +39,7 @@ variants=~/pipeline/bcf/"$1"_variants.vcf
 final_variants=~/pipeline/vcf/"$1"_final_variants.vcf
 filtered_variants=~/pipeline/vcf/"$1"_filtered_variants.vcf.gz
 artifacts=~/pipeline/artifacts/"$1" 
+artifacts_tab="$artifacts"/"$1"_artifacts.tab
 
 bwa mem -t 8 $genome $fq1 $fq2 > $sam
 echo "Running samtools ..."
@@ -57,8 +59,12 @@ bcftools index $filtered_variants
 echo "Finding potential sequencing artifacts ..."
 mkdir $artifacts
 bcftools isec -p $artifacts -Ov -C $filtered_variants NA12878_GIAB.vcf.gz
+
 echo "Converting vcf file to tab-delimited format for ML analysis ..."
 #the following line only needs to be executed once after initial installation of vcftools
 export PERL5LIB=/opt/vcftools_0.1.13/perl
-cat $artifacts/0000.vcf | vcf-to-tab > $artifacts/"$1"_artifacts.tab
-cp $artifacts/"$1"_artifacts.tab ~/pipeline/artifacts/all
+cat $artifacts/0000.vcf | vcf-to-tab > $artifacts_tab
+echo "Correcting column names of .tab file ..."
+cn=$(awk 'NR==1 {print $4}' $artifacts_tab)
+sed "1s|${cn}|ALT|" $artifacts_tab > "$artifacts_tab".tmp && mv "$artifacts_tab".tmp $artifacts_tab
+cp $artifacts_tab ~/pipeline/artifacts/all
