@@ -123,11 +123,12 @@ class MetaDB(object):
         print("SRAdb file Metadata:")
         print(metadata)
 
-    def keyword_match(self, keyword_file, save: str = 'true'):
+    def keyword_match(self, submissions, keyword_file, save: str = 'true'):
         """
-        Search for submissions in the metadb that contain EACH provided term. 
+        Search a given list of submissions for matching keywords. 
         Stores keywords and associated SRRs in the variables table.
-        :param keyword_file: user defined text file of keywords
+        :param submissions: user defined file of submissions. Use terms function and output to this file.
+        :param keyword_file: user defined file of keywords
         :param save: OPTIONAL: by default stores keywords and associated SRRs in database \n
         in a table called terms. Enter 'ns' if you do not wish to store keywords.
         :return: keywords and their associated SRRs
@@ -151,7 +152,6 @@ class MetaDB(object):
         :param sql_query: SQL query string
         :return: query results formatted as pandas dataframe
         """
-        #results = self.cursor.execute("""SELECT * FROM genome('dna');""").fetchone()
         results = self.cursor.execute(sql_query).fetchall()
         return results
 
@@ -190,7 +190,7 @@ class MetaDB(object):
 
         return results
 
-    def terms(self, terms, save: str = 'true', output: str = 'srr'):
+    def terms(self, terms, output: str = 'srr', save: str = 'true'):
         """
         Search for submissions in the metadb that contain ALL provided terms. Run 'cli.py terms -h' for documentation \n
         The experiment columns searched are 'title', 'study_name', 'design_description', \n
@@ -199,8 +199,8 @@ class MetaDB(object):
         The study column searched is 'study_abstract'.
         :param terms: term(s) to search for separated by commas. ex: 'NA12878, Illumina platform, \n
         reagent'. Alternatively, enter the path to a text file of term groups to search for.
-        :param output: OPTIONAL: by default SRRs are outputted. Enter 'sra_srr' if \n
-        you want both sra and srr accessions.
+        :param output: OPTIONAL: by default SRRs are outputted. Enter 'srp_srr' if \n
+        you want both srp (study) and srr (run) accessions.
         :return: submission and run accession numbers for submissions containing the terms
         """
 
@@ -221,6 +221,9 @@ class MetaDB(object):
 
 
     def _terms_helper(self, terms, save: str = 'true', output: str = 'srr'):
+        """
+        Terms helper function. Method name is preceded by underscore to hide from user.
+        """
         
         columns = ['experiment_title', 'study_name', 'design_description', 'sample_name', 'library_strategy', 'library_construction_protocol',
                    'platform', 'instrument_model', 'platform_parameters', 'study_abstract']
@@ -228,7 +231,7 @@ class MetaDB(object):
         if output == 'srr':
             query_string = 'SELECT DISTINCT run_accession FROM sra WHERE ('
         else:
-            query_string = 'SELECT DISTINCT submission_accession, run_accession FROM sra WHERE ('
+            query_string = 'SELECT DISTINCT study_accession, run_accession FROM sra WHERE ('
 
         for t in terms:
             for c in columns:
@@ -243,8 +246,11 @@ class MetaDB(object):
             print('No submissions match all of the provided terms: {}'.format(terms))
         else:
             for r in results:
-                for tup in r:
-                    print(tup)
+                #results is a list of tuples
+                if output == 'srr':
+                    print(r[0])
+                else:
+                    print(r[0] + ', ' + r[1])
 
 
 if __name__ == "__main__":
