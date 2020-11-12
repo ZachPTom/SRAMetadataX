@@ -22,7 +22,7 @@ SQL_dict = {'list_tables': 'SELECT name FROM sqlite_master WHERE type="table";',
             'sra_sm': 'SELECT description FROM sample WHERE submission_accession=?'}
 
 
-class MetaDB(object):
+class SRAMetadataX(object):
     def __init__(self):
         """Initialize SRAdb.
         Parameters
@@ -38,7 +38,7 @@ class MetaDB(object):
                 "file:{}?mode=rw".format(self.sqlite_file), uri=True)
         except:
             value = input(
-                "SRAmetadb sqlite file not found in current directory. Download file? Enter [y/n]\n")
+                "SRAmetadb sqlite file not found in current directory. Download file? Enter [y/n]:\n")
             if value == 'y':
                 self.download_sradb()
                 self.sqlite_file = os.path.join(
@@ -46,8 +46,16 @@ class MetaDB(object):
                 self.db = sqlite3.connect(
                     "file:{}?mode=rw".format(self.sqlite_file), uri=True)
             else:
-                print('Please put SRAmetadb.sqlite in the current directory. Exiting...')
-                exit()
+                value = input(
+                    "Enter the path to your SRAmetadb.sqlite file (enter [n] to exit):\n")
+                if value == 'n':
+                    print('Exiting...')
+                    exit()
+                else:
+                    self.sqlite_file = value
+                    self.db = sqlite3.connect(
+                        "file:{}?mode=rw".format(self.sqlite_file), uri=True)
+
         self.cursor = self.db.cursor()
 
     def all_lcp(self):
@@ -254,4 +262,4 @@ class MetaDB(object):
 
 
 if __name__ == "__main__":
-    fire.Fire(MetaDB)
+    fire.Fire(SRAMetadataX)
