@@ -15,8 +15,7 @@ SQLITE_URL = [
 
 SQL_dict = {'list_tables': 'SELECT name FROM sqlite_master WHERE type="table";',
             'count_lcp': 'SELECT count(library_construction_protocol) FROM experiment WHERE library_construction_protocol like ? OR library_construction_protocol like ?;',
-            'all_acc_lcp': 'SELECT submission_accession FROM experiment WHERE library_construction_protocol like ? OR library_construction_protocol like ?;',
-            'all_acc_sm': 'SELECT submission_accession FROM sample WHERE description!=?;',
+            'all_sm_lcp': 'SELECT submission_accession FROM sra WHERE library_construction_protocol IS NOT NULL;',
             'keyword_match': 'SELECT DISTINCT run_accession FROM sra WHERE library_construction_protocol LIKE ? OR study_abstract LIKE ?',
             'sra_lcp': 'SELECT library_construction_protocol FROM experiment WHERE submission_accession=?',
             'sra_sm': 'SELECT description FROM sample WHERE submission_accession=?'}
@@ -69,14 +68,16 @@ class SRAMetadataX(object):
 
         self.cursor = self.db.cursor()
 
-    def all_lcp(self):
+
+    def all_sm_lcp(self):
         """
-        List all SRA submissions that contain library construction protocol data
+        List all SRA submissions that contain sample manipulation/library construction protocol data
         :return: submission accession numbers
         """
         results = self.cursor.execute(
-            SQL_dict['all_acc_lcp'], ('% kit %', '% reagent %')).fetchall()
+            SQL_dict['all_sm_lcp']).fetchall()
         return results
+
 
     def _download(self, url, file_path):
         """
@@ -84,7 +85,6 @@ class SRAMetadataX(object):
         """
         with open(file_path, "wb") as f:
             print("Downloading {}".format(file_path))
-            #response = requests.get(url, stream=True)
             with requests.get(url, stream=True) as r:
                 r.raise_for_status()
                 pbar = tqdm(total=int(r.headers['Content-Length']))
@@ -92,6 +92,7 @@ class SRAMetadataX(object):
                     if chunk:  # filter out keep-alive new chunks
                         f.write(chunk)
                         pbar.update(len(chunk))
+
 
     def download_sradb(self):
         """
@@ -142,6 +143,7 @@ class SRAMetadataX(object):
         print("SRAdb file Metadata:")
         print(metadata)
 
+
     def keyword_match(self, submissions, keyword_file, save: str = 'true'):
         """
         Search a given list of submissions for matching keywords. 
@@ -174,6 +176,7 @@ class SRAMetadataX(object):
         results = self.cursor.execute(sql_query).fetchall()
         return results
 
+
     def sra_lcp(self, sra: str = 'oogityboogity'):
         """
         Extracts library construction protocol data for an SRA submission
@@ -184,6 +187,7 @@ class SRAMetadataX(object):
         results = self.cursor.execute(SQL_dict['sra_lcp'], (sra,)).fetchall()
         return results
 
+
     def sra_sm(self, sra: str = 'oogabooga'):
         """
         Extracts sample manipulation data for an SRA submission
@@ -193,6 +197,7 @@ class SRAMetadataX(object):
         #results = self.cursor.execute(SQL_dict['all_acc_sm'], ('null',)).fetchone()
         results = self.cursor.execute(SQL_dict['sra_sm'], (sra,)).fetchall()
         return results
+
 
     def table_info(self, command: str = 'list_all'):
         """
@@ -208,6 +213,7 @@ class SRAMetadataX(object):
             results = self.cursor.execute(SQL_dict['list_tables']).fetchall()
 
         return results
+
 
     def terms(self, terms, output: str = 'srr', save: str = 'true'):
         """
