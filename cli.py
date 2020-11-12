@@ -23,8 +23,8 @@ SQL_dict = {'list_tables': 'SELECT name FROM sqlite_master WHERE type="table";',
                              'IS NOT NULL);',
             'keyword_match': 'SELECT experiment_accession FROM sra WHERE (experiment_accession=?) AND (library_construction_protocol' +
                              ' LIKE ? OR study_abstract LIKE ?)',
-            'sra_lcp': 'SELECT library_construction_protocol FROM experiment WHERE submission_accession=?',
-            'sra_sm': 'SELECT description FROM sample WHERE submission_accession=?'}
+            'srx_sa_lcp': 'SELECT {} FROM sra WHERE experiment_accession=?'
+            }
 
 
 class SRAMetadataX(object):
@@ -88,7 +88,7 @@ class SRAMetadataX(object):
             results = self.cursor.execute(SQL_dict['all_sm_lcp']).fetchall()
             return results
         else:
-            srps = self.terms(terms, 'srp_srr')
+            srps = self.terms(terms, 'srp_srr', False)
             for srp in srps:
                 results = self.cursor.execute(SQL_dict['all_sm_lcp_kw'], (srp[0], )).fetchall()
                 for r in results:
@@ -206,26 +206,50 @@ class SRAMetadataX(object):
             print("Please enter a valid query. Run 'query --help' for more info.")
 
 
-    def sra_lcp(self, sra: str = 'none'):
+    def srx_sa_lcp(self, srx, sa_lcp: str = 'sa_lcp'):
         """
-        Extracts library construction protocol data for an SRA submission
-        :param sra: SRA identifier
-        :return: library construction protocol data
+        Extracts study abstract and/or library construction protocol data for an SRA experiment or list of \n
+        experiments.
+        :param srx: SRX, list of SRXs, or path to a file containing list of SRXs
+        :param sa_lcp: OPTIONAL: enter 'sa' for study abstract or 'lcp' for library construction protocol. \n
+        By default returns both study abstract and library construction protocol data.
+        :return: study abstract and/or library construction protocol data
         """
-        #results = self.cursor.execute(SQL_dict['all_acc_rk'], ('% kit %', '% reagent %')).fetchone()
-        results = self.cursor.execute(SQL_dict['sra_lcp'], (sra,)).fetchall()
-        return results
 
+        results_final = []
+        srx_list = []
+        switcher = {
+            'sa': 'study_abstract',
+            'lcp': 'library_construction_protocol',
+            'sa_lcp': 'study_abstract, library_construction_protocol'
+        }
 
-    def sra_sm(self, sra: str = 'oogabooga'):
-        """
-        Extracts sample manipulation data for an SRA submission
-        :param sra: SRA identifier
-        :return: sample manipulation data
-        """
-        #results = self.cursor.execute(SQL_dict['all_acc_sm'], ('null',)).fetchone()
-        results = self.cursor.execute(SQL_dict['sra_sm'], (sra,)).fetchall()
-        return results
+        if os.path.isfile(str(srx)):
+            with open(srx, 'r') as f:
+                for line in f:
+                    for accession in line.split(','):
+                        srx_list.append(accession.rstrip("\n"))
+        else:
+            if isinstance(srx, tuple):
+                srx_list = list(srx)
+            else:
+                srx_list.append(srx)
+
+        columns = switcher.get(sa_lcp, 'study_abstract, library_construction_protocol')
+        query = SQL_dict['srx_sa_lcp'].format(columns)
+
+        for experiment in srx_list:
+            results = self.cursor.execute(query, (experiment,)).fetchall()
+            for r in results:
+                if sa_lcp == 'sa' or 'lcp':
+                    results_final.append(r[0])
+                else:
+                    results_final.append(r[0] + ', ' + r[1])
+
+        if not results_final:
+            print('Experiment {} contains no study abstract and/or library construction protocol data'.format(srx))
+
+        return results_final
 
 
     def table_info(self, command: str = 'list_all'):
@@ -244,7 +268,7 @@ class SRAMetadataX(object):
         return results
 
 
-    def terms(self, terms, output: str = 'srr', save: str = 'true'):
+    def terms(self, terms, output: str = 'srr', print_out = True, save: str = 'true'):
         """
         Search for submissions in the metadb that contain ALL provided terms. Run 'cli.py terms -h' for documentation \n
         The experiment columns searched are 'title', 'study_name', 'design_description', \n
@@ -264,17 +288,17 @@ class SRAMetadataX(object):
                     terms_list = []
                     for keyword in line.split(','):
                         terms_list.append(keyword.rstrip("\n"))
-                    self._terms_helper(terms_list, save, output)
+                    self._terms_helper(terms_list, output, print_out, save)
         else:
-            try:
-                terms = terms.split(',')
-            except:
+            if isinstance(terms, tuple):
+                terms = list(terms)
+            else:
                 pass
 
-            return self._terms_helper(terms, save, output)
+            return self._terms_helper(terms, output, print_out, save)
 
 
-    def _terms_helper(self, terms, save: str = 'true', output: str = 'srr'):
+    def _terms_helper(self, terms, output: str = 'srr', print_out = True, save: str = 'true'):
         """
         Terms helper function. Method name is preceded by underscore to hide from user.
         """
@@ -299,14 +323,15 @@ class SRAMetadataX(object):
         if not results:
             print('No submissions match all of the provided terms: {}'.format(terms))
         else:
-            for r in results:
-                #results is a list of tuples
-                if output == 'srr':
-                    print(r[0])
-                else:
-                    print(r[0] + ', ' + r[1])
-        
-        return results
+            if print_out:
+                for r in results:
+                    #results is a list of tuples
+                    if output == 'srr':
+                        print(r[0])
+                    else:
+                        print(r[0] + ', ' + r[1])
+            else:
+                return results
 
 
 if __name__ == "__main__":
