@@ -7,6 +7,8 @@ import sys
 import gzip
 import shutil
 from tqdm.autonotebook import tqdm
+from collections import OrderedDict 
+
 
 SQLITE_URL = [
     "https://s3.amazonaws.com/starbuck1/sradb/SRAmetadb.sqlite.gz",
@@ -14,9 +16,13 @@ SQLITE_URL = [
 ]
 
 SQL_dict = {'list_tables': 'SELECT name FROM sqlite_master WHERE type="table";',
-            'count_lcp': 'SELECT count(library_construction_protocol) FROM experiment WHERE library_construction_protocol like ? OR library_construction_protocol like ?;',
-            'all_sm_lcp': 'SELECT submission_accession FROM sra WHERE library_construction_protocol IS NOT NULL;',
-            'keyword_match': 'SELECT DISTINCT run_accession FROM sra WHERE library_construction_protocol LIKE ? OR study_abstract LIKE ?',
+            'count_lcp': 'SELECT count(library_construction_protocol) FROM experiment WHERE library_construction_protocol ' + 
+                          'like ? OR library_construction_protocol like ?;',
+            'all_sm_lcp': 'SELECT experiment_accession FROM sra WHERE library_construction_protocol IS NOT NULL;',
+            'all_sm_lcp_kw': 'SELECT experiment_accession FROM sra WHERE (study_accession=?) AND (library_construction_protocol ' +
+                             'IS NOT NULL);',
+            'keyword_match': 'SELECT experiment_accession FROM sra WHERE (experiment_accession=?) AND (library_construction_protocol' +
+                             ' LIKE ? OR study_abstract LIKE ?)',
             'sra_lcp': 'SELECT library_construction_protocol FROM experiment WHERE submission_accession=?',
             'sra_sm': 'SELECT description FROM sample WHERE submission_accession=?'}
 
@@ -69,14 +75,26 @@ class SRAMetadataX(object):
         self.cursor = self.db.cursor()
 
 
-    def all_sm_lcp(self):
+    def all_sm_lcp(self, terms = 'none'):
         """
-        List all SRA submissions that contain sample manipulation/library construction protocol data
+        List all SRA studies that contain sample manipulation/library construction protocol data.\n
+        Alternatively, search for studies that contain sm/lcp data and a term or set of terms.
+        :param terms: a term or list of terms that submissions need to contain. Alternatively, \n
+        enter the path to a text file of term groups to search for.
         :return: submission accession numbers
         """
-        results = self.cursor.execute(
-            SQL_dict['all_sm_lcp']).fetchall()
-        return results
+        results_final = []
+        if terms == 'none':
+            results = self.cursor.execute(SQL_dict['all_sm_lcp']).fetchall()
+            return results
+        else:
+            srps = self.terms(terms, 'srp_srr')
+            for srp in srps:
+                results = self.cursor.execute(SQL_dict['all_sm_lcp_kw'], (srp[0], )).fetchall()
+                for r in results:
+                    results_final.append(r[0])
+            results_final = list(OrderedDict.fromkeys(results_final))
+            return results_final
 
 
     def _download(self, url, file_path):
@@ -144,27 +162,32 @@ class SRAMetadataX(object):
         print(metadata)
 
 
-    def keyword_match(self, submissions, keyword_file, save: str = 'true'):
+    def keyword_match(self, experiments_file, keyword_file, save: str = 'true'):
         """
-        Search a given list of submissions for matching keywords. 
-        Stores keywords and associated SRRs in the variables table.
-        :param submissions: user defined file of submissions. Use terms function and output to this file.
-        :param keyword_file: user defined file of keywords
-        :param save: OPTIONAL: by default stores keywords and associated SRRs in database \n
-        in a table called terms. Enter 'ns' if you do not wish to store keywords.
-        :return: keywords and their associated SRRs
+        Search the metadata of a given list of experiments for matching keywords. Use this method \n
+        as a way to parse the reagents, kits, and sm/lcp methods from desired entries. \n
+        Stores experiments and associated keywords in the parameters table.
+        :param experiments_file: path to user defined file of experiments.
+        :param keyword_file: path to user defined file of keywords
+        :param save: OPTIONAL: by default stores experiments and associated keywords in database \n
+        in a table called parameters. Enter 'ns' if you do not wish to store keywords.
+        :return: experiments and their associated keywords
         """
-        with open(keyword_file, 'r') as f:
-            sys.stdout.write(
-                "Reading {}.. this may take a while depending on the number of keywords in your file".format(keyword_file))
-            for line in f:
-                for keyword in line.split():
-                    print(keyword)
-                    results = self.cursor.execute(
-                        SQL_dict['keyword_match'], ('% ' + keyword + ' %', '% ' + keyword + ' %')).fetchall()
-                    for r in results:
-                        for tup in r:
-                            print(tup)
+        with open(experiments_file, 'r') as s:
+            with open(keyword_file, 'r') as kw:
+                for submission in s:
+                    result_string = submission
+                    sys.stdout.write(
+                        "Parsing {}.. this may take a while depending on the number of keywords in your file".format(submission))
+                    for line in kw:
+                        for keyword in line.split():
+                            #print(keyword)
+                            results = self.cursor.execute(
+                                SQL_dict['keyword_match'], (submission, '% ' + keyword + ' %', '% ' + keyword + ' %')).fetchall()
+                            if results:
+                                result_string += ' ' + keyword
+                
+                    print(result_string)
 
 
     def query(self, sql_query: str = 'oogabooga'):
@@ -226,7 +249,7 @@ class SRAMetadataX(object):
         reagent'. Alternatively, enter the path to a text file of term groups to search for.
         :param output: OPTIONAL: by default SRRs are outputted. Enter 'srp_srr' if \n
         you want both srp (study) and srr (run) accessions.
-        :return: submission and run accession numbers for submissions containing the terms
+        :return: run or both submission and run accession numbers for entries containing the terms
         """
 
         if os.path.isfile(str(terms)):
@@ -242,7 +265,7 @@ class SRAMetadataX(object):
             except:
                 pass
 
-            self._terms_helper(terms, save, output)
+            return self._terms_helper(terms, save, output)
 
 
     def _terms_helper(self, terms, save: str = 'true', output: str = 'srr'):
@@ -276,6 +299,8 @@ class SRAMetadataX(object):
                     print(r[0])
                 else:
                     print(r[0] + ', ' + r[1])
+        
+        return results
 
 
 if __name__ == "__main__":
