@@ -190,17 +190,23 @@ class SRAMetadataX(object):
                     print(result_string)
 
 
-    def query(self, sql_query: str = 'oogabooga'):
+    def query(self, sql_query: str = 'none'):
         """
         Run custom SQL query.
         :param sql_query: SQL query string
         :return: query results formatted as pandas dataframe
         """
-        results = self.cursor.execute(sql_query).fetchall()
-        return results
+        if sql_query != 'none':
+            results = self.cursor.execute(sql_query).fetchall()
+            if not results:
+                print('Query: {} returned no results'.format(sql_query))
+            else:
+                return results
+        else:
+            print("Please enter a valid query. Run 'query --help' for more info.")
 
 
-    def sra_lcp(self, sra: str = 'oogityboogity'):
+    def sra_lcp(self, sra: str = 'none'):
         """
         Extracts library construction protocol data for an SRA submission
         :param sra: SRA identifier
