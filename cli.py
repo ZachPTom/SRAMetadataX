@@ -32,13 +32,21 @@ class SRAMetadataX(object):
         sqlite_file: string
                     Path to unzipped SRAmetadb.sqlite file
         """
-        self.sqlite_file = os.path.join(os.getcwd(), "SRAmetadb.sqlite")
+        # First check for database file in current directory
+        if not os.path.exists(os.path.join(os.getcwd(), "SRAmetadb.sqlite")):   
+            if os.path.exists('.databasepath'):
+                with open('.databasepath', 'r') as f:
+                    for line in f:
+                        self.sqlite_file = line
+        else:
+            self.sqlite_file = os.path.join(os.getcwd(), "SRAmetadb.sqlite")
+
         try:
             self.db = sqlite3.connect(
                 "file:{}?mode=rw".format(self.sqlite_file), uri=True)
         except:
             value = input(
-                "SRAmetadb sqlite file not found in current directory. Download file? Enter [y/n]:\n")
+                "SRAmetadb sqlite file not found. Download file? Enter [y/n]:\n")
             if value == 'y':
                 self.download_sradb()
                 self.sqlite_file = os.path.join(
@@ -55,6 +63,9 @@ class SRAMetadataX(object):
                     self.sqlite_file = value
                     self.db = sqlite3.connect(
                         "file:{}?mode=rw".format(self.sqlite_file), uri=True)
+                    # store the given database path for future use
+                    with open('.databasepath', 'w') as f:
+                        f.write(value)
 
         self.cursor = self.db.cursor()
 
