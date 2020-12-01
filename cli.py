@@ -19,7 +19,7 @@ SQL_dict = {'list_tables': 'SELECT name FROM sqlite_master WHERE type="table";',
             'count_lcp': 'SELECT count(library_construction_protocol) FROM experiment WHERE library_construction_protocol ' + 
                           'like ? OR library_construction_protocol like ?;',
             'all_sm_lcp': 'SELECT experiment_accession FROM sra WHERE library_construction_protocol IS NOT NULL;',
-            'all_sm_lcp_kw': 'SELECT experiment_accession FROM sra WHERE (study_accession=?) AND (library_construction_protocol ' +
+            'all_sm_lcp_kw': 'SELECT experiment_accession FROM experiment WHERE (study_accession=?) AND (library_construction_protocol ' +
                              'IS NOT NULL);',
             'keyword_match': 'SELECT experiment_accession FROM sra WHERE (experiment_accession=?) AND (library_construction_protocol' +
                              ' LIKE ? OR study_abstract LIKE ?)',
@@ -77,11 +77,11 @@ class SRAMetadataX(object):
 
     def all_sm_lcp(self, terms = 'none'):
         """
-        List all SRA studies that contain sample manipulation/library construction protocol data.\n
-        Alternatively, search for studies that contain sm/lcp data and a term or set of terms.
+        List all SRA experiments that contain sample manipulation/library construction protocol data.\n
+        Alternatively, search for experiments that contain sm/lcp data and a term or set of terms.
         :param terms: a term or list of terms that submissions need to contain. Alternatively, \n
         enter the path to a text file of term groups to search for.
-        :return: submission accession numbers
+        :return: experiment accession numbers
         """
         results_final = []
         if terms == 'none':
@@ -89,7 +89,9 @@ class SRAMetadataX(object):
             return results
         else:
             srps = self.terms(terms, 'srp_srr', False)
-            for srp in srps:
+            srps_set = set(srps)
+            unique_srps = list(srps_set)
+            for srp in unique_srps:
                 results = self.cursor.execute(SQL_dict['all_sm_lcp_kw'], (srp[0], )).fetchall()
                 for r in results:
                     results_final.append(r[0])
@@ -241,15 +243,16 @@ class SRAMetadataX(object):
         for experiment in srx_list:
             results = self.cursor.execute(query, (experiment,)).fetchall()
             for r in results:
-                if sa_lcp == 'sa' or 'lcp':
+                if sa_lcp == 'sa' or sa_lcp == 'lcp':
                     results_final.append(r[0])
                 else:
-                    results_final.append(r[0] + ', ' + r[1])
+                    results_final.append('abstract:\n' + str(r[0]) + '\n\nlibrary construction protocol:\n' + str(r[1]))
 
         if not results_final:
             print('Experiment {} contains no study abstract and/or library construction protocol data'.format(srx))
 
-        return results_final
+        for result in results_final:
+            print(result + '\n')
 
 
     def table_info(self, command: str = 'list_all'):
@@ -268,7 +271,7 @@ class SRAMetadataX(object):
         return results
 
 
-    def terms(self, terms, output: str = 'srr', print_out = True, save: str = 'true'):
+    def terms(self, terms, output: str = 'srr', print_out = True, save = False):
         """
         Search for submissions in the metadb that contain ALL provided terms. Run 'cli.py terms -h' for documentation \n
         The experiment columns searched are 'title', 'study_name', 'design_description', \n
@@ -279,6 +282,7 @@ class SRAMetadataX(object):
         reagent'. Alternatively, enter the path to a text file of term groups to search for.
         :param output: OPTIONAL: by default SRRs are outputted. Enter 'srp_srr' if \n
         you want both srp (study) and srr (run) accessions.
+        :param save: OPTIONAL: pass argument 'True' to save accessions to a temporary 'terms' table.
         :return: run or both submission and run accession numbers for entries containing the terms
         """
 
@@ -292,8 +296,6 @@ class SRAMetadataX(object):
         else:
             if isinstance(terms, tuple):
                 terms = list(terms)
-            else:
-                pass
 
             return self._terms_helper(terms, output, print_out, save)
 
@@ -333,6 +335,9 @@ class SRAMetadataX(object):
             else:
                 return results
 
+    def test(self, terms):
+        terms = list(terms)
+        print(terms)
 
 if __name__ == "__main__":
     fire.Fire(SRAMetadataX)
