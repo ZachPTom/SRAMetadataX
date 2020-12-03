@@ -23,6 +23,7 @@ SQL_dict = {'list_tables': 'SELECT name FROM sqlite_master WHERE type="table";',
                              'IS NOT NULL);',
             'keyword_match': 'SELECT experiment_accession FROM sra WHERE (experiment_accession=?) AND (library_construction_protocol' +
                              ' LIKE ? OR study_abstract LIKE ?)',
+            'meta_info': 'SELECT * FROM metaInfo',
             'srx_sa_lcp': 'SELECT {} FROM sra WHERE experiment_accession=?'
             }
 
@@ -159,7 +160,7 @@ class SRAMetadataX(object):
                 shutil.copyfileobj(f_in, f_out)
 
         print("SRAmetadb file download complete!")
-        metadata = self.query("SELECT * FROM metaInfo")
+        metadata = self.cursor.execute(SQL_dict['meta_info']).fetchall()
         print("SRAdb file Metadata:")
         print(metadata)
 
@@ -169,8 +170,8 @@ class SRAMetadataX(object):
         Search the metadata of a given list of experiments for matching keywords. Use this method \n
         as a way to parse the reagents, kits, and sm/lcp methods from desired entries. \n
         Stores experiments and associated keywords in the parameters table.
-        :param experiments_file: path to user defined file of experiments.
-        :param keyword_file: path to user defined file of keywords
+        :param experiments_file: path to user defined text file of experiments.
+        :param keyword_file: path to user defined csv file of keywords
         :param save: OPTIONAL: by default stores experiments and associated keywords in database \n
         in a table called parameters. Enter 'ns' if you do not wish to store keywords.
         :return: experiments and their associated keywords
@@ -305,8 +306,8 @@ class SRAMetadataX(object):
         Terms helper function. Method name is preceded by underscore to hide from user.
         """
         
-        columns = ['experiment_title', 'study_name', 'design_description', 'sample_name', 'library_strategy', 'library_construction_protocol',
-                   'platform', 'instrument_model', 'platform_parameters', 'study_abstract']
+        columns = ['experiment_title', 'study_name', 'design_description', 'sample_name', 'library_strategy', 
+                   'library_construction_protocol', 'platform', 'instrument_model', 'platform_parameters', 'study_abstract']
 
         if output == 'srr':
             query_string = 'SELECT DISTINCT run_accession FROM sra WHERE ('
@@ -335,9 +336,9 @@ class SRAMetadataX(object):
             else:
                 return results
 
-    def test(self, terms):
-        terms = list(terms)
-        print(terms)
+    # def test(self, terms):
+    #     terms = list(terms)
+    #     print(terms)
 
 if __name__ == "__main__":
     fire.Fire(SRAMetadataX)
