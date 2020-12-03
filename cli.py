@@ -10,21 +10,25 @@ from tqdm.autonotebook import tqdm
 from collections import OrderedDict 
 
 
-SQLITE_URL = [
+SRADB_URL = [
     "https://s3.amazonaws.com/starbuck1/sradb/SRAmetadb.sqlite.gz",
     "https://gbnci-abcc.ncifcrf.gov/backup/SRAmetadb.sqlite.gz",
 ]
 
-SQL_dict = {'list_tables': 'SELECT name FROM sqlite_master WHERE type="table";',
-            'count_lcp': 'SELECT count(library_construction_protocol) FROM experiment WHERE library_construction_protocol ' + 
-                          'like ? OR library_construction_protocol like ?;',
-            'all_sm_lcp': 'SELECT experiment_accession FROM sra WHERE library_construction_protocol IS NOT NULL;',
+SQL_dict = {'all_sm_lcp': 'SELECT experiment_accession FROM sra WHERE library_construction_protocol IS NOT NULL;',
             'all_sm_lcp_kw': 'SELECT experiment_accession FROM experiment WHERE (study_accession=?) AND (library_construction_protocol ' +
                              'IS NOT NULL);',
-            'keyword_match': 'SELECT experiment_accession FROM sra WHERE (experiment_accession=?) AND (library_construction_protocol' +
-                             ' LIKE ? OR study_abstract LIKE ?)',
-            'meta_info': 'SELECT * FROM metaInfo',
-            'srx_sa_lcp': 'SELECT {} FROM sra WHERE experiment_accession=?'
+            'count_lcp': 'SELECT count(library_construction_protocol) FROM experiment WHERE library_construction_protocol ' + 
+                          'like ? OR library_construction_protocol like ?;',
+            'create_params': 'CREATE TABLE IF NOT EXISTS params (accession TEXT PRIMARY KEY, fragmentation TEXT, adapter_ligation TEXT, ' +
+                             'enrichment TEXT);',
+            'keyword_match': 'SELECT experiment_accession FROM sra WHERE (experiment_accession=?) AND (library_construction_protocol ' +
+                             'LIKE ? OR study_abstract LIKE ?);',
+            'km_create_temp': 'CREATE TEMP TABLE km_experiments AS SELECT * FROM sra WHERE 0;',
+            'km_insert_temp': 'INSERT INTO km_experiments SELECT * FROM sra WHERE experiment_accession=?;',
+            'meta_info': 'SELECT * FROM metaInfo;',
+            'list_tables': 'SELECT name FROM sqlite_master WHERE type="table";',
+            'srx_sa_lcp': 'SELECT {} FROM sra WHERE experiment_accession=?;'
             }
 
 
@@ -89,7 +93,7 @@ class SRAMetadataX(object):
             results = self.cursor.execute(SQL_dict['all_sm_lcp']).fetchall()
             return results
         else:
-            srps = self.terms(terms, 'srp_srr', False)
+            srps = self.terms(terms, 'study_accession, run_accession', print_out = False)
             srps_set = set(srps)
             unique_srps = list(srps_set)
             for srp in unique_srps:
@@ -136,20 +140,20 @@ class SRAMetadataX(object):
             )
 
         try:
-            self._download(SQLITE_URL[0], dl_path)
+            self._download(SRADB_URL[0], dl_path)
         except Exception as e:
             # Try NCBI
             sys.stderr.write(
                 "Could not use AWS s3 {}.\nException: {}.\nTrying NCBI...\n".format(
-                    SQLITE_URL[0], e
+                    SRADB_URL[0], e
                 )
             )
             try:
-                self._download(SQLITE_URL[1], dl_path)
+                self._download(SRADB_URL[1], dl_path)
             except Exception as e:
                 sys.stderr.write(
                     "Could not use NCBI {}.\nException: {}.\nPlease download the SQlite file via wget...\n".format(
-                        SQLITE_URL[0], e
+                        SRADB_URL[0], e
                     )
                 )
 
@@ -165,7 +169,7 @@ class SRAMetadataX(object):
         print(metadata)
 
 
-    def keyword_match(self, experiments_file, keyword_file, save: str = 'true'):
+    def keyword_match(self, experiments_file, keyword_file = 'oogabooga', save: str = 'true'):
         """
         Search the metadata of a given list of experiments for matching keywords. Use this method \n
         as a way to parse the reagents, kits, and sm/lcp methods from desired entries. \n
@@ -176,21 +180,31 @@ class SRAMetadataX(object):
         in a table called parameters. Enter 'ns' if you do not wish to store keywords.
         :return: experiments and their associated keywords
         """
-        with open(experiments_file, 'r') as s:
-            with open(keyword_file, 'r') as kw:
-                for submission in s:
-                    result_string = submission
-                    sys.stdout.write(
-                        "Parsing {}.. this may take a while depending on the number of keywords in your file".format(submission))
-                    for line in kw:
-                        for keyword in line.split():
-                            #print(keyword)
-                            results = self.cursor.execute(
-                                SQL_dict['keyword_match'], (submission, '% ' + keyword + ' %', '% ' + keyword + ' %')).fetchall()
-                            if results:
-                                result_string += ' ' + keyword
+        #create the params table if it does not exist
+        self.cursor.execute(SQL_dict['create_params'])
+
+        with open(experiments_file, 'r') as f:
+            #create smaller table of desired experiments from sra table to speed up execution
+            self.cursor.execute(SQL_dict['km_create_temp'])
+            for accession in f:
+                accession = accession.rstrip("\n")
+                self.cursor.execute(SQL_dict['km_insert_temp'], (accession,))
+                #print(self.query('SELECT count(experiment_accession) FROM km_experiments;'))
+
+        # with open(keyword_file, 'r') as kw:
+        #     for submission in s:
+        #         result_string = submission
+        #         sys.stdout.write(
+        #             "Parsing {}.. this may take a while depending on the number of keywords in your file".format(submission))
+        #         for line in kw:
+        #             for keyword in line.split():
+        #                 #print(keyword)
+        #                 results = self.cursor.execute(
+        #                     SQL_dict['keyword_match'], (submission, '% ' + keyword + ' %', '% ' + keyword + ' %')).fetchall()
+        #                 if results:
+        #                     result_string += ' ' + keyword
                 
-                    print(result_string)
+        #             print(result_string)
 
 
     def query(self, sql_query: str = 'none'):
@@ -272,7 +286,7 @@ class SRAMetadataX(object):
         return results
 
 
-    def terms(self, terms, output: str = 'srr', print_out = True, save = False):
+    def terms(self, terms, output: str = 'run_accession', save = False, print_out = True):
         """
         Search for submissions in the metadb that contain ALL provided terms. Run 'cli.py terms -h' for documentation \n
         The experiment columns searched are 'title', 'study_name', 'design_description', \n
@@ -281,10 +295,12 @@ class SRAMetadataX(object):
         The study column searched is 'study_abstract'.
         :param terms: term(s) to search for separated by commas. ex: 'NA12878, Illumina platform, \n
         reagent'. Alternatively, enter the path to a text file of term groups to search for.
-        :param output: OPTIONAL: by default SRRs are outputted. Enter 'srp_srr' if \n
-        you want both srp (study) and srr (run) accessions.
+        :param output: OPTIONAL: by default run_accessions are outputted. Enter 'experiment_accession', \n
+        'run_accession', and/or 'study_accession' if desired. If multiple, separate by commas. Example: \n
+        'experiment_accession, run_accession'.
         :param save: OPTIONAL: pass argument 'True' to save accessions to a temporary 'terms' table.
-        :return: run or both submission and run accession numbers for entries containing the terms
+        :param print_out: internal use only.
+        :return: run or both study and run accession numbers for entries containing the terms
         """
 
         if os.path.isfile(str(terms)):
@@ -293,15 +309,15 @@ class SRAMetadataX(object):
                     terms_list = []
                     for keyword in line.split(','):
                         terms_list.append(keyword.rstrip("\n"))
-                    self._terms_helper(terms_list, output, print_out, save)
+                    self._terms_helper(terms_list, output, save, print_out)
         else:
             if isinstance(terms, tuple):
                 terms = list(terms)
 
-            return self._terms_helper(terms, output, print_out, save)
+            return self._terms_helper(terms, output, save, print_out)
 
 
-    def _terms_helper(self, terms, output: str = 'srr', print_out = True, save: str = 'true'):
+    def _terms_helper(self, terms, output: str = 'run_accession', save = False, print_out = True):
         """
         Terms helper function. Method name is preceded by underscore to hide from user.
         """
@@ -309,10 +325,17 @@ class SRAMetadataX(object):
         columns = ['experiment_title', 'study_name', 'design_description', 'sample_name', 'library_strategy', 
                    'library_construction_protocol', 'platform', 'instrument_model', 'platform_parameters', 'study_abstract']
 
-        if output == 'srr':
-            query_string = 'SELECT DISTINCT run_accession FROM sra WHERE ('
-        else:
-            query_string = 'SELECT DISTINCT study_accession, run_accession FROM sra WHERE ('
+        # if output == 'srr':
+        #     query_string = 'SELECT DISTINCT run_accession FROM sra WHERE ('
+        # else:
+        #     query_string = 'SELECT DISTINCT study_accession, run_accession FROM sra WHERE ('
+
+        query_string = 'SELECT DISTINCT ' + output + ' FROM sra WHERE ('
+        output_count = output.count(',') + 1
+
+        if output_count > 3: 
+            print('Error: limit output to experiment_accession, run_accession, and/or study_accession only')
+            return
 
         for t in terms:
             for c in columns:
@@ -329,10 +352,12 @@ class SRAMetadataX(object):
             if print_out:
                 for r in results:
                     #results is a list of tuples
-                    if output == 'srr':
+                    if output_count == 1:
                         print(r[0])
-                    else:
+                    elif output_count == 2:
                         print(r[0] + ', ' + r[1])
+                    else:
+                        print(r[0] + ', ' + r[1] + ', ' + r[2])
             else:
                 return results
 
